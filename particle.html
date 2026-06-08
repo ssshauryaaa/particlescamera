@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Particle System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #00ffcc;
+      --accent-dim: rgba(0,255,204,0.12);
+      --accent-border: rgba(0,255,204,0.25);
+      --panel-bg: rgba(9, 9, 11, 0.82);
+      --panel-border: rgba(255,255,255,0.06);
+      --surface: rgba(255,255,255,0.04);
+      --surface-hover: rgba(255,255,255,0.07);
+      --text-primary: #f0f0ef;
+      --text-secondary: rgba(240,240,239,0.4);
+      --text-muted: rgba(240,240,239,0.22);
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #050505;
+      font-family: 'Syne', sans-serif;
+      color: var(--text-primary);
+    }
+
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    /* ── Loading ── */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(20px);
+      padding: 12px 20px;
+      border-radius: 40px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+      transition: opacity 0.4s;
+    }
+    #loading .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    #loading .dot:nth-child(2) { animation-delay: .2s; }
+    #loading .dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes pulse { 0%,100%{opacity:.2;transform:scale(.8)} 50%{opacity:1;transform:scale(1)} }
+
+    /* ── Webcam ── */
+    #webcam {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 160px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: var(--radius);
+      border: 1px solid var(--panel-border);
+      transform: scaleX(-1);
+      z-index: 10;
+      background: #000;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    #webcam.active {
+      border-color: var(--accent-border);
+      box-shadow: 0 0 0 1px var(--accent-border), 0 0 20px rgba(0,255,204,0.08);
+    }
+
+    /* ── Panel ── */
+    .panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      width: 220px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      animation: slideIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    @keyframes slideIn {
+      from { opacity:0; transform: translateX(-12px); }
+      to   { opacity:1; transform: translateX(0); }
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 14px 13px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .panel-header i {
+      font-size: 14px;
+      color: var(--accent);
+      opacity: 0.9;
+    }
+    .panel-header span {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .panel-body {
+      padding: 10px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 8px 4px 4px;
+    }
+
+    /* ── Shape buttons ── */
+    .shape-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+    }
+
+    .shape-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 10px 4px 8px;
+      background: var(--surface);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s, transform 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .shape-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 0%, rgba(0,255,204,0.08), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .shape-btn:hover { background: var(--surface-hover); transform: translateY(-1px); }
+    .shape-btn:hover::before { opacity: 1; }
+    .shape-btn:active { transform: translateY(0) scale(0.97); }
+    .shape-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+    }
+    .shape-btn.active::before { opacity: 1; }
+    .shape-btn i {
+      font-size: 16px;
+      color: var(--text-secondary);
+      transition: color 0.18s;
+    }
+    .shape-btn.active i,
+    .shape-btn:hover i { color: var(--accent); }
+    .shape-btn span {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      transition: color 0.18s;
+    }
+    .shape-btn.active span,
+    .shape-btn:hover span { color: var(--text-secondary); }
+
+    /* ── Divider ── */
+    .divider { height: 1px; background: var(--panel-border); margin: 4px 0; }
+
+    /* ── Color row ── */
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: var(--surface);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s;
+      position: relative;
+    }
+    .color-row:hover {
+      background: var(--surface-hover);
+      border-color: var(--panel-border);
+    }
+    .color-swatch-wrap {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .color-swatch-wrap input[type="color"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      border: none;
+      padding: 0;
+    }
+    .color-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      background: var(--accent);
+      pointer-events: none;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .color-row:hover .color-swatch {
+      transform: scale(1.1);
+      box-shadow: 0 0 10px rgba(0,255,204,0.3);
+    }
+    .color-info { flex: 1; min-width: 0; }
+    .color-info .color-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: block;
+      margin-bottom: 1px;
+    }
+    .color-info .color-hex {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+    }
+    .color-row i.ti-chevron-right {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: transform 0.18s, color 0.18s;
+    }
+    .color-row:hover i.ti-chevron-right { transform: translateX(2px); color: var(--text-secondary); }
+
+    /* ── Status ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      transition: background 0.3s;
+    }
+    .status-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .status-row.active .status-dot {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+    }
+    .status-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      transition: color 0.3s;
+    }
+    .status-row.active .status-text { color: var(--text-secondary); }
+
+    /* ── Gesture pills ── */
+    .gesture-pills {
+      display: flex;
+      gap: 4px;
+      padding: 4px 0 2px;
+    }
+    .g-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px 4px 6px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--panel-border);
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--text-muted);
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .g-pill.lit {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+      color: var(--accent);
+    }
+    .g-pill i { font-size: 11px; }
+
+    /* ── Top right button ── */
+    .top-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.15s;
+      animation: slideIn 0.5s 0.1s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .top-btn i { font-size: 16px; }
+    .top-btn:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255,255,255,0.12);
+      color: var(--text-primary);
+      transform: scale(1.05);
+    }
+    .top-btn:active { transform: scale(0.96); }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <div id="loading">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    Initialising system
+  </div>
+
+  <div id="canvas-container"></div>
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <!-- Panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <i class="ti ti-atom"></i>
+      <span>Particle System</span>
+    </div>
+    <div class="panel-body">
+
+      <div class="section-label">Shape</div>
+      <div class="shape-grid">
+        <button class="shape-btn active" data-model="tree">
+          <i class="ti ti-triangle"></i>
+          <span>Tree</span>
+        </button>
+        <button class="shape-btn" data-model="saturn">
+          <i class="ti ti-circle-dashed"></i>
+          <span>Saturn</span>
+        </button>
+        <button class="shape-btn" data-model="heart">
+          <i class="ti ti-heart"></i>
+          <span>Heart</span>
+        </button>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label">Colour</div>
+
+      <div class="color-row" onclick="document.getElementById('particle-color').click()">
+        <div class="color-swatch-wrap">
+          <input type="color" id="particle-color" value="#00ffcc" />
+          <div class="color-swatch" id="color-swatch"></div>
+        </div>
+        <div class="color-info">
+          <span class="color-label">Particle tint</span>
+          <span class="color-hex" id="color-hex">#00ffcc</span>
+        </div>
+        <i class="ti ti-chevron-right"></i>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label">Gesture</div>
+
+      <div class="gesture-pills">
+        <div class="g-pill" id="pill-open">
+          <i class="ti ti-hand-stop"></i>open · rotate
+        </div>
+        <div class="g-pill" id="pill-fist">
+          <i class="ti ti-hand-grab"></i>fist · scale
+        </div>
+      </div>
+
+      <div class="status-row" id="gesture-status">
+        <div class="status-dot"></div>
+        <span class="status-text">Waiting for camera…</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Fullscreen button -->
+  <button class="top-btn" id="btn-fullscreen" title="Toggle fullscreen">
+    <i class="ti ti-maximize" id="fs-icon"></i>
+  </button>
+
+  <script>
+    let scene, camera, renderer, controls;
+    let particleGeometry, particleSystem;
+
+    const PARTICLE_COUNT = 35000;
+    const targetPositions = {
+      heart:  new Float32Array(PARTICLE_COUNT * 3),
+      saturn: new Float32Array(PARTICLE_COUNT * 3),
+      tree:   new Float32Array(PARTICLE_COUNT * 3)
+    };
+
+    let currentModel = "tree";
+    let gestureScale = 1.0, targetGestureScale = 1.0;
+    let targetRotationX = 0, targetRotationY = 0;
+
+    const BASE_MODEL_SCALE = 1.75;
+    const MIN_GESTURE_SCALE = 0.1, MAX_GESTURE_SCALE = 2.4;
+    const PALM_SIZE_MIN = 0.11, PALM_SIZE_MAX = 0.28, PALM_SIZE_SCALE_ONE = 0.1547368421;
+
+    function mapPalmSizeToScale(ps) {
+      if (ps <= PALM_SIZE_SCALE_ONE)
+        return THREE.MathUtils.mapLinear(ps, PALM_SIZE_MIN, PALM_SIZE_SCALE_ONE, MIN_GESTURE_SCALE, 1.0);
+      return THREE.MathUtils.mapLinear(ps, PALM_SIZE_SCALE_ONE, PALM_SIZE_MAX, 1.0, MAX_GESTURE_SCALE);
+    }
+
+    function generateModelPositions() {
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const i3 = i * 3;
+        // Tree
+        if (i < PARTICLE_COUNT * 0.08) {
+          const a = Math.random() * Math.PI * 2;
+          const r = (1.8 + Math.abs(Math.sin(a * 5)) * 3.0) * Math.sqrt(Math.random());
+          targetPositions.tree[i3] = r * Math.cos(a);
+          targetPositions.tree[i3+1] = 20 + (Math.random()-.5)*1.5;
+          targetPositions.tree[i3+2] = r * Math.sin(a) * 0.45;
+        } else if (i < PARTICLE_COUNT * 0.92) {
+          const h = Math.random()*32-14, ln = (h+14)/32, lp = (ln*4)%1;
+          let br = (1-ln)*18; br *= Math.pow(lp,.42);
+          const a = Math.random()*Math.PI*2;
+          const r = Math.max(0, br*Math.sqrt(Math.random())+(Math.random()-.5)*2.5);
+          targetPositions.tree[i3] = Math.cos(a)*r;
+          targetPositions.tree[i3+1] = h;
+          targetPositions.tree[i3+2] = Math.sin(a)*r;
+        } else {
+          const h = Math.random()*5-19, r = Math.random()*2.2, a = Math.random()*Math.PI*2;
+          targetPositions.tree[i3] = Math.cos(a)*r;
+          targetPositions.tree[i3+1] = h;
+          targetPositions.tree[i3+2] = Math.sin(a)*r;
+        }
+        // Saturn
+        if (i < PARTICLE_COUNT * 0.42) {
+          const t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+          const r = 11.5 * Math.cbrt(Math.random());
+          targetPositions.saturn[i3] = r*Math.sin(p)*Math.cos(t);
+          targetPositions.saturn[i3+1] = r*Math.sin(p)*Math.sin(t)*(0.82+Math.random()*.06);
+          targetPositions.saturn[i3+2] = r*Math.cos(p);
+        } else {
+          const rb = Math.random();
+          const bb = rb<.22?14.5:rb<.48?18.5:rb<.72?23.5:28.5;
+          const rR = bb+Math.random()*3.5+Math.sin(bb*1.7+i*.013)*.9;
+          const tR = Math.random()*Math.PI*2;
+          const rip = Math.sin(tR*10+rR*.9)*.45+Math.sin(tR*23)*.18;
+          targetPositions.saturn[i3] = (rR+rip)*Math.cos(tR);
+          targetPositions.saturn[i3+1] = (Math.random()-.5)*(.45+rb*.85);
+          targetPositions.saturn[i3+2] = (rR+rip)*Math.sin(tR);
+        }
+        // Heart
+        const t2 = Math.PI*2*Math.random(), u = Math.PI*(Math.random()-.5);
+        const hx = 16*Math.pow(Math.sin(t2),3);
+        const hy = 13*Math.cos(t2)-5*Math.cos(2*t2)-2*Math.cos(3*t2)-Math.cos(4*t2);
+        const hz = 6*Math.sin(u)*(1-Math.abs(Math.sin(t2)));
+        targetPositions.heart[i3] = hx*1.35;
+        targetPositions.heart[i3+1] = hy*1.35;
+        targetPositions.heart[i3+2] = hz*1.35;
+      }
+    }
+
+    function initThree() {
+      const container = document.getElementById("canvas-container");
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x050505, 0.012);
+      camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 1000);
+      camera.position.set(0, 5, 58);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+      container.appendChild(renderer.domElement);
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true; controls.dampingFactor = .05;
+      generateModelPositions();
+      particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(targetPositions.tree), 3));
+      const mat = new THREE.PointsMaterial({
+        size:.34, color: new THREE.Color("#00ffcc"),
+        transparent:true, opacity:.95,
+        blending: THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true
+      });
+      particleSystem = new THREE.Points(particleGeometry, mat);
+      scene.add(particleSystem);
+      window.addEventListener("resize", () => {
+        camera.aspect = innerWidth/innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+    }
+
+    function initWebcamAndAI() {
+      const vid = document.getElementById("webcam");
+      const statusRow = document.getElementById("gesture-status");
+      const statusText = statusRow.querySelector(".status-text");
+      const loading = document.getElementById("loading");
+      const pillOpen = document.getElementById("pill-open");
+      const pillFist = document.getElementById("pill-fist");
+
+      if (!window.Hands || !window.Camera) {
+        loading.textContent = "Gesture library unavailable — particles still work";
+        setTimeout(() => loading.style.opacity = "0", 2500);
+        return;
+      }
+
+      const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+      hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:.5, minTrackingConfidence:.5 });
+
+      hands.onResults(results => {
+        if (loading && document.body.contains(loading)) {
+          loading.style.opacity = "0";
+          setTimeout(() => loading.remove(), 400);
+        }
+        if (results.multiHandLandmarks?.length) {
+          statusRow.classList.add("active");
+          vid.classList.add("active");
+          const h = results.multiHandLandmarks[0];
+          const wrist=h[0],thumbTip=h[4],thumbIP=h[3],indexPip=h[6],indexTip=h[8];
+          const middlePip=h[10],middleTip=h[12],middleBase=h[9];
+          const ringPip=h[14],ringTip=h[16],pinkyPip=h[18],pinkyTip=h[20];
+          const palmSize = Math.hypot(wrist.x-middleBase.x, wrist.y-middleBase.y)||.08;
+          const px=(wrist.x+middleBase.x)*.5, py=(wrist.y+middleBase.y)*.5;
+          const spread=([thumbTip,indexTip,middleTip,ringTip,pinkyTip].reduce((s,f)=>s+Math.hypot(f.x-px,f.y-py),0))/5;
+          const openness = spread/palmSize;
+          const thumbCurled = Math.hypot(thumbTip.x-px,thumbTip.y-py)<Math.hypot(thumbIP.x-px,thumbIP.y-py)*1.1;
+          const iC=Math.hypot(indexTip.x-wrist.x,indexTip.y-wrist.y)<Math.hypot(indexPip.x-wrist.x,indexPip.y-wrist.y)*1.08;
+          const mC=Math.hypot(middleTip.x-wrist.x,middleTip.y-wrist.y)<Math.hypot(middlePip.x-wrist.x,middlePip.y-wrist.y)*1.08;
+          const rC=Math.hypot(ringTip.x-wrist.x,ringTip.y-wrist.y)<Math.hypot(ringPip.x-wrist.x,ringPip.y-wrist.y)*1.08;
+          const pC=Math.hypot(pinkyTip.x-wrist.x,pinkyTip.y-wrist.y)<Math.hypot(pinkyPip.x-wrist.x,pinkyPip.y-wrist.y)*1.12;
+          const isFist = openness<1.72 && thumbCurled && [iC,mC,rC,pC].filter(Boolean).length>=3;
+          const hcx=(wrist.x+middleBase.x+h[5].x+h[17].x)*.25;
+          const hcy=(wrist.y+middleBase.y+h[5].y+h[17].y)*.25;
+          targetRotationY = -(hcx-.5)*Math.PI*1.8;
+          targetRotationX =  (hcy-.5)*Math.PI*1.1;
+          if (isFist) {
+            targetGestureScale = THREE.MathUtils.clamp(mapPalmSizeToScale(palmSize), MIN_GESTURE_SCALE, MAX_GESTURE_SCALE);
+          } else {
+            targetGestureScale = 1.0;
+          }
+          pillOpen.classList.toggle("lit", !isFist);
+          pillFist.classList.toggle("lit", isFist);
+          statusText.textContent = isFist
+            ? `Scale ${targetGestureScale.toFixed(2)}x — move closer / further`
+            : "Tracking hand position";
+        } else {
+          statusRow.classList.remove("active");
+          vid.classList.remove("active");
+          pillOpen.classList.remove("lit");
+          pillFist.classList.remove("lit");
+          statusText.textContent = "No hand detected";
+          targetGestureScale = 1.0;
+        }
+      });
+
+      const camUtils = new Camera(vid, {
+        onFrame: async () => await hands.send({ image: vid }),
+        width: 640, height: 480
+      });
+      camUtils.start()
+        .then(() => { statusText.textContent = "Camera ready — show your hand"; })
+        .catch(() => { statusText.textContent = "Camera unavailable — use mouse to rotate"; });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!particleSystem || !particleGeometry) return;
+      gestureScale += (targetGestureScale - gestureScale) * .12;
+      const scale = BASE_MODEL_SCALE * gestureScale;
+      particleSystem.rotation.y += (targetRotationY - particleSystem.rotation.y) * .05;
+      particleSystem.rotation.x += (targetRotationX - particleSystem.rotation.x) * .05;
+      const pos = particleGeometry.attributes.position.array;
+      const tgt = targetPositions[currentModel];
+      for (let i=0;i<PARTICLE_COUNT;i++) {
+        const i3=i*3;
+        pos[i3]   += (tgt[i3]  *scale - pos[i3])   * .08;
+        pos[i3+1] += (tgt[i3+1]*scale - pos[i3+1]) * .08;
+        pos[i3+2] += (tgt[i3+2]*scale - pos[i3+2]) * .08;
+      }
+      particleGeometry.attributes.position.needsUpdate = true;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function setupUI() {
+      // Shape buttons
+      document.querySelectorAll(".shape-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".shape-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentModel = btn.dataset.model;
+        });
+      });
+
+      // Color picker
+      const colorInput = document.getElementById("particle-color");
+      const colorHex   = document.getElementById("color-hex");
+      const colorSwatch = document.getElementById("color-swatch");
+      colorInput.addEventListener("input", e => {
+        const c = e.target.value;
+        colorHex.textContent = c;
+        colorSwatch.style.background = c;
+        document.documentElement.style.setProperty("--accent", c);
+        if (particleSystem) particleSystem.material.color.set(c);
+      });
+
+      // Fullscreen
+      const fsBtn  = document.getElementById("btn-fullscreen");
+      const fsIcon = document.getElementById("fs-icon");
+      fsBtn.addEventListener("click", () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen();
+          fsIcon.className = "ti ti-minimize";
+        } else {
+          document.exitFullscreen();
+          fsIcon.className = "ti ti-maximize";
+        }
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initThree();
+      setupUI();
+      animate();
+      initWebcamAndAI();
+    });
+  </script>
+</body>
+</html>
